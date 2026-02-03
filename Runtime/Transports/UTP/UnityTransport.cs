@@ -672,7 +672,9 @@ namespace Unity.Netcode.Transports.UTP
 #if HOSTNAME_RESOLUTION_AVAILABLE
                     if (Uri.CheckHostName(ConnectionData.Address) != UriHostNameType.Dns)
                     {
-                        Debug.LogError($"Provided connection address \"{ConnectionData.Address}\" is not a valid hostname.");
+                        string message = $"Provided connection address \"{ConnectionData.Address}\" is not a valid hostname.";
+                        Debug.LogError(message);
+                        UnityTransportPrevLog.prevLog = message;
                         return false;
                     }
 #else
@@ -1858,5 +1860,18 @@ namespace Unity.Netcode.Transports.UTP
             AddDisconnectEventMap(NetworkTransport.DisconnectEvents.ClosedRemoteConnection, k_ClosedRemoteConnection, ClosedRemoteConnectionMessage);
             AddDisconnectEventMap(NetworkTransport.DisconnectEvents.TransportShutdown, k_TransportShutdown, TransportShutdownMessage);
         }
+    }
+
+    public static class UnityTransportPrevLog
+    {
+        public static string prevLog;
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod]
+        public static void ResetValues()
+        {
+            prevLog = null;
+        }
+#endif
     }
 }
