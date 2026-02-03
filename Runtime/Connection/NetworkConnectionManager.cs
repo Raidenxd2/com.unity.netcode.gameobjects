@@ -587,6 +587,8 @@ namespace Unity.Netcode
                 NetworkLog.LogInfo($"{m_DisconnectReason}{serverDisconnectReason}");
             }
         }
+        
+        public event Action<ulong> OnDisconnect2;
 
         /// <summary>
         /// Handles a <see cref="NetworkEvent.Disconnect"/> event.
@@ -609,6 +611,8 @@ namespace Unity.Netcode
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             s_TransportDisconnect.Begin();
 #endif
+            
+            OnDisconnect2.Invoke(clientId);
 
             if (NetworkLog.CurrentLogLevel <= LogLevel.Developer)
             {

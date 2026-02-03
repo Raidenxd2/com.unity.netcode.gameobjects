@@ -985,7 +985,7 @@ namespace Unity.Netcode
 
         internal INetworkMetrics NetworkMetrics => MetricsManager.NetworkMetrics;
         internal NetworkMetricsManager MetricsManager = new NetworkMetricsManager();
-        internal NetworkConnectionManager ConnectionManager = new NetworkConnectionManager();
+        public NetworkConnectionManager ConnectionManager = new NetworkConnectionManager();
         internal NetworkMessageManager MessageManager = null;
 
         /// <summary>
