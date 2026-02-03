@@ -76,6 +76,16 @@ namespace Unity.Netcode
         /// </remarks>
         public List<NetworkTransform> NetworkTransforms { get; private set; }
 
+        /// <summary>
+        /// Set to true if this instance is the original/first instance created and spawned which
+        /// means the <see cref="CreateObjectMessage"/> was generated from this instance and sent
+        /// to all other clients.
+        ///
+        /// Client-Server: This will be true for all instances on the server or host.
+        /// Distributed Authority: This will be true on the client that created the first instance
+        /// and spawned it (even if spawning with ownership being assigned to a different client).
+        /// </summary>
+        internal bool IsSpawnAuthority;
 
 #if COM_UNITY_MODULES_PHYSICS || COM_UNITY_MODULES_PHYSICS2D
         /// <summary>
@@ -1320,6 +1330,15 @@ namespace Unity.Netcode
 
         internal readonly HashSet<ulong> Observers = new HashSet<ulong>();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void AddObserver(ulong clientId)
+        {
+#if NETCODE_DEBUG_OBSERVERS
+            Debug.Log($"[{nameof(NetworkObject)}][{name}-{NetworkObjectId}] Adding Client-{clientId} as an observer.");
+#endif
+            Observers.Add(clientId);
+        }
+
 #if MULTIPLAYER_TOOLS
         private string m_CachedNameForMetrics;
 #endif
@@ -1469,7 +1488,7 @@ namespace Unity.Netcode
                 return;
             }
             NetworkManager.SpawnManager.MarkObjectForShowingTo(this, clientId);
-            Observers.Add(clientId);
+            AddObserver(clientId);
         }
 
 
@@ -1999,9 +2018,11 @@ namespace Unity.Netcode
         {
             // Always clear out the observers list when despawned
             Observers.Clear();
+            IsSpawnAuthority = false;
             IsSpawned = false;
             DeferredDespawnTick = 0;
             m_LatestParent = null;
+            RemoveOwnershipExtended(OwnershipStatusExtended.Locked | OwnershipStatusExtended.Requested);
         }
 
         /// <summary>
@@ -2075,6 +2096,19 @@ namespace Unity.Netcode
                 {
                     Debug.LogWarning($"{ChildNetworkBehaviours[i].gameObject.name} is disabled! Netcode for GameObjects does not support disabled NetworkBehaviours! The {ChildNetworkBehaviours[i].GetType().Name} component was skipped during ownership assignment!");
                 }
+            }
+        }
+
+        internal void InvokeSessionOwnerPromoted(bool isSessionOwner)
+        {
+            if (!IsSpawned)
+            {
+                return;
+            }
+
+            foreach (var childBehaviour in ChildNetworkBehaviours)
+            {
+                childBehaviour.IsSessionOwner = isSessionOwner;
             }
         }
 
@@ -2556,6 +2590,12 @@ namespace Unity.Netcode
         {
             NetworkManager.SpawnManager.UpdateOwnershipTable(this, OwnerClientId);
 
+            // Always invoke all InternalOnNetworkSpawn methods on each child NetworkBehaviour
+            // ** before ** invoking OnNetworkSpawn.
+            // This assures all NetworkVariables and RPC related tables have been initialized
+            // prior to invoking OnNetworkSpawn so cross NetworkBehaviour:
+            // - accessing of NetworkVariables will work correctly.
+            // - invocation of RPCs will work properly (and not throw exception under certain scenarios)
             foreach (var childBehaviour in ChildNetworkBehaviours)
             {
                 if (!childBehaviour.gameObject.activeInHierarchy)
@@ -2564,6 +2604,17 @@ namespace Unity.Netcode
                     continue;
                 }
                 childBehaviour.InternalOnNetworkSpawn();
+            }
+
+            // After initialization, we can then invoke OnNetworkSpawn on each child NetworkBehaviour.
+            foreach (var childBehaviour in ChildNetworkBehaviours)
+            {
+                if (!childBehaviour.gameObject.activeInHierarchy)
+                {
+                    Debug.LogWarning($"{GenerateDisabledNetworkBehaviourWarning(childBehaviour)}");
+                    continue;
+                }
+                childBehaviour.NetworkSpawn();
             }
         }
 
@@ -2577,7 +2628,6 @@ namespace Unity.Netcode
                 }
             }
         }
-
 
         internal void InternalNetworkSessionSynchronized()
         {
@@ -3310,7 +3360,7 @@ namespace Unity.Netcode
             {
                 foreach (var observer in sceneObject.Observers)
                 {
-                    networkObject.Observers.Add(observer);
+                    networkObject.AddObserver(observer);
                 }
             }
 
@@ -3330,11 +3380,11 @@ namespace Unity.Netcode
                     if (networkObject.IsPlayerObject)
                     {
                         // If it is another player, then make sure the local player is aware of the player
-                        playerObject.Observers.Add(networkObject.OwnerClientId);
+                        playerObject.AddObserver(networkObject.OwnerClientId);
                     }
 
                     // Assure the local player has observability
-                    networkObject.Observers.Add(playerObject.OwnerClientId);
+                    networkObject.AddObserver(playerObject.OwnerClientId);
 
                     // If it is a player object, then add it to all known spawned NetworkObjects that spawn with observers
                     if (networkObject.IsPlayerObject)
@@ -3343,7 +3393,7 @@ namespace Unity.Netcode
                         {
                             if (netObject.Value.SpawnWithObservers)
                             {
-                                netObject.Value.Observers.Add(networkObject.OwnerClientId);
+                                netObject.Value.AddObserver(networkObject.OwnerClientId);
                             }
                         }
                     }
@@ -3355,7 +3405,7 @@ namespace Unity.Netcode
                         // Add all known players to the observers list if they don't already exist
                         foreach (var player in networkManager.SpawnManager.PlayerObjects)
                         {
-                            networkObject.Observers.Add(player.OwnerClientId);
+                            networkObject.AddObserver(player.OwnerClientId);
                         }
                     }
                 }
