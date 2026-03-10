@@ -366,7 +366,7 @@ namespace Unity.Netcode
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (ulong, bool) ClientIdToTransportId(ulong clientId)
+        public (ulong, bool) ClientIdToTransportId(ulong clientId)
         {
             if (clientId == NetworkManager.ServerClientId)
             {
